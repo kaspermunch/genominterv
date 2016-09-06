@@ -164,6 +164,36 @@ class _MultiGroupBy(object):
         return pd.concat(group_results)
 
 
+import unittest
+
+class TestIntervalOperations(unittest.TestCase):
+
+	@classmethod
+	def setUpClass(cls):
+	    # code for setting up the two sets of intervals to operate on.
+	    pass
+
+    def test_difference(self):
+        #self.assertEqual('foo'.upper(), 'FOO')
+        pass
+
+    def test_intersection(self):
+        # self.assertTrue('FOO'.isupper())
+        # self.assertFalse('Foo'.isupper())
+        pass
+
+    def test_union(self):
+        # s = 'hello world'
+        # self.assertEqual(s.split(), ['hello', 'world'])
+        # # check that s.split fails when the separator is not a string
+        # with self.assertRaises(TypeError):
+        #     s.split(2)
+        pass
+
+    def test_remap(self):
+    	pass
+
+
 if __name__ == "__main__":
 
 	# In all of the following, the list of intervals must be sorted and 

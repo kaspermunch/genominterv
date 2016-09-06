@@ -42,7 +42,7 @@ def unflatten(list_of_endpoints):
           for i in range(0, len(list_of_endpoints) - 1, 2)]
 
 
-def merge(a_tps, b_tps, op):
+def _merge(a_tps, b_tps, op):
     """Merge two lists of intervals according to the boolean function op"""
     a_endpoints = flatten(a_tps)
     b_endpoints = flatten(b_tps)
@@ -74,15 +74,15 @@ def merge(a_tps, b_tps, op):
 
 @chromosomal()
 def interval_diff(a, b):
-    return merge(a, b, lambda in_a, in_b: in_a and not in_b)
+    return _merge(a, b, lambda in_a, in_b: in_a and not in_b)
 
 @chromosomal()
 def interval_union(a, b):
-    return merge(a, b, lambda in_a, in_b: in_a or in_b)
+    return _merge(a, b, lambda in_a, in_b: in_a or in_b)
 
 @chromosomal()
 def interval_intersect(a, b):
-    return merge(a, b, lambda in_a, in_b: in_a and in_b)
+    return _merge(a, b, lambda in_a, in_b: in_a and in_b)
 
 @chromosomal()
 def interval_collapse(a):
@@ -95,7 +95,7 @@ def interval_collapse(a):
             a_un[-1][1] = x[1]
     return a_un
 
-def remap(query, annot):
+def _remap(query, annot):
     query_start, query_end = query
     annot_starts, annot_ends = zip(*annot)
 
@@ -131,7 +131,7 @@ def interval_distance(query, annot):
     into two intervals proximal to each annotation.
     It is assumed that the query intervals do not overlap the 
     """
-    return list(chain.from_iterable(remap(q, annot) for q in query))
+    return list(chain.from_iterable(_remap(q, annot) for q in query))
 
 
 
@@ -164,7 +164,9 @@ if __name__ == "__main__":
 	# that x is in tp(start, end) iff start <= x and x < end.
 
 	# annotation
-	tp = [('chr1', 1, 3), ('chr1', 4, 10), ('chr1', 25, 30), ('chr1', 20, 27), ('chr2', 1, 10), ('chr2', 1, 3)]
+	tp = [('chr1', 1, 3), ('chr1', 4, 10), 
+		('chr1', 25, 30), ('chr1', 20, 27), 
+		('chr2', 1, 10), ('chr2', 1, 3)]
 	annot = pd.DataFrame.from_records(tp, columns=['chrom', 'start', 'end'])
 	print "annot\n", annot
 

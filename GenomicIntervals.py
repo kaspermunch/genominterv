@@ -30,12 +30,12 @@ def chromosomal(strip=True, addback=True):
     return decorator    
 
 
-def flatten(list_of_tps):
+def _flatten(list_of_tps):
     """Convert a list of intervals to a list of endpoints"""
     return reduce(lambda ls, ival: ls + list(ival), list_of_tps, [])
 
 
-def unflatten(list_of_endpoints):
+def _unflatten(list_of_endpoints):
     """Convert a list of endpoints, with an optional terminating sentinel,
     into a list of intervals"""
     return [ [list_of_endpoints[i], list_of_endpoints[i + 1]]
@@ -44,8 +44,8 @@ def unflatten(list_of_endpoints):
 
 def _merge(a_tps, b_tps, op):
     """Merge two lists of intervals according to the boolean function op"""
-    a_endpoints = flatten(a_tps)
-    b_endpoints = flatten(b_tps)
+    a_endpoints = _flatten(a_tps)
+    b_endpoints = _flatten(b_tps)
 
     sentinel = max(a_endpoints[-1], b_endpoints[-1]) + 1
     a_endpoints += [sentinel]
@@ -70,19 +70,23 @@ def _merge(a_tps, b_tps, op):
             b_index += 1
         scan = min(a_endpoints[a_index], b_endpoints[b_index])
 
-    return unflatten(res)
+    return _unflatten(res)
+
 
 @chromosomal()
-def interval_diff(a, b):
+def interval_difference(a, b):
     return _merge(a, b, lambda in_a, in_b: in_a and not in_b)
+
 
 @chromosomal()
 def interval_union(a, b):
     return _merge(a, b, lambda in_a, in_b: in_a or in_b)
 
+
 @chromosomal()
-def interval_intersect(a, b):
+def interval_intersection(a, b):
     return _merge(a, b, lambda in_a, in_b: in_a and in_b)
+
 
 @chromosomal()
 def interval_collapse(a):
@@ -94,6 +98,7 @@ def interval_collapse(a):
         else:
             a_un[-1][1] = x[1]
     return a_un
+
 
 def _remap(query, annot):
     query_start, query_end = query
@@ -122,6 +127,7 @@ def _remap(query, annot):
                     (interval_end - query_end, interval_end - interval_mid)]
     return remapped
 
+
 @chromosomal()
 def interval_distance(query, annot):
     """
@@ -143,6 +149,7 @@ class DataFrameList(object):
     def groupby(self, by):
         return _MultiGroupBy(self, by)
     
+
 class _MultiGroupBy(object):
 
     def __init__(self, dflist, by):
@@ -183,7 +190,7 @@ if __name__ == "__main__":
 
 	non_ovl_query = (DataFrameList(query, annot_collapsed)
 	                 .groupby('chrom')
-	                 .apply(interval_diff)
+	                 .apply(interval_difference)
 	                 .reset_index(drop=True)
 	                 )
 	print "non_ovl_query\n", non_ovl_query

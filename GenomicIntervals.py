@@ -1,51 +1,109 @@
 import pandas as pd
+import numpy as np
 
-from functools import wraps
-import bisect, math
-from itertools import chain, izip
+from functools import wraps, reduce
+import bisect, math, random
+from itertools import chain
+
+# def with_chrom(strip=True, addback=True):
+#     """decorator for converting a function operating on (start, end) tuples 
+#     to one that takes data frames with chrom, start, end columns"""
+#     def decorator(func):
+#         @wraps(func)
+#         def wrapper(*args):
+#             chrom_set = set()
+#             tps_list = list()
+#             for df in args:
+#                 chrom_set.update(df['chrom'])
+#                 if strip:
+#                     tps = sorted(zip(df['start'], df['end']))
+#                 else:
+#                     tps = sorted(zip(df['chrom'], df['start'], df['end']))    
+#                 tps_list.append(tps)
+#             assert len(chrom_set) == 1
+#             chrom = chrom_set.pop()
+#             res_df = pd.DataFrame.from_records(func(*tps_list), columns = ['start', 'end'])
+#             if addback:
+#                 res_df['chrom'] = chrom
+#             return res_df
+#         return wrapper
+#     return decorator    
 
 
-def chromosomal(strip=True, addback=True):
+def by_chrom(func):
+    """decorator to converting a function that operates on a data frame
+    with only one chromosome to one operating on a data frame with many chromosomes."""
+    @wraps(func)
+    def wrapper(*args):
+
+        # make a local copy with reset indexes
+        data_frames = [df.reset_index() for df in args]
+
+        # get all chromosoems in arguments
+        chromosomes = set()
+        for df in data_frames:
+            chromosomes.update(df['chrom'].unique())
+        chromosomes = sorted(chromosomes)
+
+        # get indexes (possibly none) for each chromosome in each frame
+        idx = list()
+        for df in data_frames:
+            d = dict((chrom, []) for chrom in chromosomes)
+            gr = df.groupby('chrom').groups
+            d.update(gr)
+            idx.append(d)
+
+        # call func on subsets of each argument matching a chromosome
+        results = list()
+        for chrom in chromosomes:
+            func_args = list()
+            for i, df in enumerate(data_frames):
+                func_args.append(df.loc[idx[i][chrom]])
+            results.append(func(*func_args))
+
+        return pd.concat(results).reset_index()
+    return wrapper
+
+
+def with_chrom(func):
     """decorator for converting a function operating on (start, end) tuples 
     to one that takes data frames with chrom, start, end columns"""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args):
-            chrom_set = set()
-            tps_list = list()
-            for df in args:
-                chrom_set.update(df['chrom'])
-                if strip:
-                    tps = sorted(zip(df['start'], df['end']))
-                else:
-                    tps = sorted(zip(df['chrom'], df['start'], df['end']))    
-                tps_list.append(tps)
-            assert len(chrom_set) == 1
-            chrom = chrom_set.pop()
-            res_df = pd.DataFrame.from_records(func(*tps_list), columns = ['start', 'end'])
-            if addback:
-                res_df['chrom'] = chrom
-            return res_df
-        return wrapper
-    return decorator    
+    @wraps(func)
+    def wrapper(*args):
+        chrom_set = set()
+        tps_list = list()
+        for df in args:            
+            chrom_set.update(df['chrom'])
+            tps = sorted(zip(df['start'], df['end']))
+            tps_list.append(tps)
+        assert len(chrom_set) == 1
+        chrom = chrom_set.pop()
+        res_df = pd.DataFrame.from_records(func(*tps_list), columns = ['start', 'end'])
+        res_df['chrom'] = chrom
+        return res_df
+    return wrapper
 
 
-def _flatten(list_of_tps):
+# In all of the following, the list of intervals must be sorted and 
+# non-overlapping. We also assume that the intervals are half-open, so
+# that x is in tp(start, end) iff start <= x and x < end.
+
+def flatten(list_of_tps):
     """Convert a list of intervals to a list of endpoints"""
     return reduce(lambda ls, ival: ls + list(ival), list_of_tps, [])
 
 
-def _unflatten(list_of_endpoints):
+def unflatten(list_of_endpoints):
     """Convert a list of endpoints, with an optional terminating sentinel,
     into a list of intervals"""
     return [ [list_of_endpoints[i], list_of_endpoints[i + 1]]
           for i in range(0, len(list_of_endpoints) - 1, 2)]
 
 
-def _merge(a_tps, b_tps, op):
+def merge(a_tps, b_tps, op):
     """Merge two lists of intervals according to the boolean function op"""
-    a_endpoints = _flatten(a_tps)
-    b_endpoints = _flatten(b_tps)
+    a_endpoints = flatten(a_tps)
+    b_endpoints = flatten(b_tps)
 
     sentinel = max(a_endpoints[-1], b_endpoints[-1]) + 1
     a_endpoints += [sentinel]
@@ -70,25 +128,29 @@ def _merge(a_tps, b_tps, op):
             b_index += 1
         scan = min(a_endpoints[a_index], b_endpoints[b_index])
 
-    return _unflatten(res)
+    return unflatten(res)
 
 
-@chromosomal()
-def interval_difference(a, b):
-    return _merge(a, b, lambda in_a, in_b: in_a and not in_b)
+@by_chrom
+@with_chrom
+def interval_diff(a, b):
+    return merge(a, b, lambda in_a, in_b: in_a and not in_b)
 
 
-@chromosomal()
+@by_chrom
+@with_chrom
 def interval_union(a, b):
-    return _merge(a, b, lambda in_a, in_b: in_a or in_b)
+    return merge(a, b, lambda in_a, in_b: in_a or in_b)
 
 
-@chromosomal()
-def interval_intersection(a, b):
-    return _merge(a, b, lambda in_a, in_b: in_a and in_b)
+@by_chrom
+@with_chrom
+def interval_intersect(a, b):
+    return merge(a, b, lambda in_a, in_b: in_a and in_b)
 
 
-@chromosomal()
+@by_chrom
+@with_chrom
 def interval_collapse(a):
     a_un = [list(a[0])]
     for i in range(1, len(a)):
@@ -100,7 +162,7 @@ def interval_collapse(a):
     return a_un
 
 
-def _remap(query, annot):
+def remap(query, annot):
     query_start, query_end = query
     annot_starts, annot_ends = zip(*annot)
 
@@ -128,7 +190,8 @@ def _remap(query, annot):
     return remapped
 
 
-@chromosomal()
+@by_chrom
+@with_chrom
 def interval_distance(query, annot):
     """
     Convertes absolute coordinates of each query intervals so that start and end
@@ -137,8 +200,57 @@ def interval_distance(query, annot):
     into two intervals proximal to each annotation.
     It is assumed that the query intervals do not overlap the 
     """
-    return list(chain.from_iterable(_remap(q, annot) for q in query))
+    return list(chain.from_iterable(remap(q, annot) for q in query))
 
+
+def interval_permute(df, chromosome_sizes):
+    """
+    Permute intervals not preserving size of gaps.
+    """
+    group_list = list()
+    for chrom, group in df.groupby('chrom'):
+
+        assert group.end.max() <= chromosome_sizes[chrom]
+
+        segment_lengths = group.end - group.start
+        total_gap = int(np.sum(df.start.shift() - df.end))
+        if group.start.iloc[0] != 0:
+            total_gap += group.start.iloc[0]
+        if group.end.iloc[-1] != chromosome_sizes[chrom]:
+            total_gap += chromosome_sizes[chrom] - group.end.iloc[-1]
+
+        idx = pd.Series(sorted(random.sample(range(total_gap), len(segment_lengths)+1)))
+        gap_lengths = (idx - idx.shift()).dropna()
+
+        borders = np.cumsum([j for i in zip(gap_lengths, segment_lengths) for j in i])
+        starts, ends = borders[::2], borders[1::2]
+
+        new_df = pd.DataFrame({'chrom': chrom, 'start': starts, 'end': ends})
+        group_list.append(new_df)
+
+    return pd.concat(group_list)
+
+
+
+def interval_jaccard(query, annot, samples=1000, chromosome_sizes={}):
+    """
+    Compute jaccard test statistic and p-value.
+    """
+    def jaccard_stat(a, b):
+        inter = interval_intersect(a, b)
+        union = interval_union(a, b)
+        return sum(inter.end - inter.start) / sum(union.end - union.start)
+
+    test_stat = jaccard_stat(query, annot)
+    null_distr = list()
+    for i in range(samples):
+        permuted = interval_permute(query, chromosome_sizes)
+        null_distr.append(jaccard_stat(query, permuted))
+    null_distr.sort()
+    p_value = (len(null_distr) - bisect.bisect_left(null_distr, test_stat)) / len(null_distr)
+    if p_value == 0:
+        raise ValueError#, 'p-value is zero smaller than {}'.format(1/samples)
+    return test_stat, p_value
 
 
 class DataFrameList(object):
@@ -159,80 +271,67 @@ class _MultiGroupBy(object):
     def apply(self, fun):
         group_results = list()
         for by in self.groupings[0].keys():
-            subframes = [df.loc[gr[by]] for df, gr in izip(self.dflist.frames, self.groupings)]
+            subframes = [df.loc[gr[by]] for df, gr in zip(self.dflist.frames, self.groupings)]
             group_results.append(fun(*subframes))
         return pd.concat(group_results)
 
 
-import unittest
-
-class TestIntervalOperations(unittest.TestCase):
-
-	@classmethod
-	def setUpClass(cls):
-	    # code for setting up the two sets of intervals to operate on.
-	    pass
-
-    def test_difference(self):
-        #self.assertEqual('foo'.upper(), 'FOO')
-        pass
-
-    def test_intersection(self):
-        # self.assertTrue('FOO'.isupper())
-        # self.assertFalse('Foo'.isupper())
-        pass
-
-    def test_union(self):
-        # s = 'hello world'
-        # self.assertEqual(s.split(), ['hello', 'world'])
-        # # check that s.split fails when the separator is not a string
-        # with self.assertRaises(TypeError):
-        #     s.split(2)
-        pass
-
-    def test_remap(self):
-    	pass
-
 
 if __name__ == "__main__":
+    # annotation
+    tp = [('chr1', 1, 3), ('chr1', 4, 10), ('chr1', 25, 30), ('chr1', 20, 27), ('chr2', 1, 10), ('chr2', 1, 3)]
+    annot = pd.DataFrame.from_records(tp, columns=['chrom', 'start', 'end'])
+    print("annot\n", annot)
 
-	# In all of the following, the list of intervals must be sorted and 
-	# non-overlapping. We also assume that the intervals are half-open, so
-	# that x is in tp(start, end) iff start <= x and x < end.
+    # query
+    tp = [('chr1', 8, 22), ('chr2', 14, 15)]
+    query = pd.DataFrame.from_records(tp, columns=['chrom', 'start', 'end'])
+    print("query\n", query)
 
-	# annotation
-	tp = [('chr1', 1, 3), ('chr1', 4, 10), 
-		('chr1', 25, 30), ('chr1', 20, 27), 
-		('chr2', 1, 10), ('chr2', 1, 3)]
-	annot = pd.DataFrame.from_records(tp, columns=['chrom', 'start', 'end'])
-	print "annot\n", annot
+    annot_collapsed = interval_collapse(annot)
+    print("annot_collapsed\n", annot_collapsed)
 
-	# query
-	tp = [('chr1', 8, 22), ('chr2', 14, 15)]
-	query = pd.DataFrame.from_records(tp, columns=['chrom', 'start', 'end'])
-	print "query\n", query
+    non_ovl_query = interval_diff(query, annot_collapsed)
+    print("non_ovl_query\n", non_ovl_query)
 
-	annot_collapsed = (annot.groupby('chrom')
-	                   .apply(interval_collapse)
-	                   .reset_index(drop=True)
-	                   )
-	print "annot_collapsed\n", annot_collapsed
+    distances = interval_distance(non_ovl_query, annot_collapsed)
+    print("distances\n", distances)
 
-	non_ovl_query = (DataFrameList(query, annot_collapsed)
-	                 .groupby('chrom')
-	                 .apply(interval_difference)
-	                 .reset_index(drop=True)
-	                 )
-	print "non_ovl_query\n", non_ovl_query
+    print('orig:')
+    print(query)
 
-	distances = (DataFrameList(non_ovl_query, annot_collapsed)
-	       .groupby('chrom')
-	       .apply(interval_distance)
-	       .reset_index(drop=True)
-	       )
-	print "distances\n", distances
+    print('permuted:')
+    print(interval_permute(query, {'chr1': 50, 'chr2': 50}))
+
+    print('jaccard:')
+    annot = pd.DataFrame({'chrom': 'chr1', 'start': range(1, 1000000, 1000), 'end': range(50, 1000050, 1000)})
+    query = pd.DataFrame({'chrom': 'chr1', 'start': range(1, 10000, 1000), 'end': range(50, 10050, 1000)})
+
+    print(interval_jaccard(query, annot, samples=1000, chromosome_sizes={'chr1': 1500000, 'chr2': 1500000}))
+
+    # FIXME: it does not work if query has chromosoems not in annotation...
 
 
 
 
+
+    # annot_collapsed = (annot.groupby('chrom')
+    #                    .apply(interval_collapse)
+    #                    .reset_index(drop=True)
+    #                    )
+    # print("annot_collapsed\n", annot_collapsed)
+
+    # non_ovl_query = (DataFrameList(query, annot_collapsed)
+    #                  .groupby('chrom')
+    #                  .apply(interval_diff)
+    #                  .reset_index(drop=True)
+    #                  )
+    # print("non_ovl_query\n", non_ovl_query)
+
+    # distances = (DataFrameList(non_ovl_query, annot_collapsed)
+    #        .groupby('chrom')
+    #        .apply(interval_distance)
+    #        .reset_index(drop=True)
+    #        )
+    # print("distances\n", distances)
 

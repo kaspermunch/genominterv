@@ -204,13 +204,13 @@ def interval_distance(query, annot):
 
 
 
-def jaccard_stat(a, b, chromosome_sizes={}, permute=False):
+def jaccard_stat(a, b, chromosome_sizes, permute=False):
     """
     Compute Jaccard overlap statistic, optionally 
     preceeded by permuting intervals in first argument.
     """
 
-    def interval_permute(df, chromosome_sizes={}):
+    def interval_permute(df, chromosome_sizes):
         """
         Permute intervals not preserving size of gaps.
         """
@@ -244,7 +244,7 @@ def jaccard_stat(a, b, chromosome_sizes={}, permute=False):
         return pandas.concat(group_list)
 
     if permute:
-        a = interval_permute(a, chromosome_sizes=chromosome_sizes)
+        a = interval_permute(a, chromosome_sizes)
 
     inter = interval_intersect(a, b)
     union = interval_union(a, b)

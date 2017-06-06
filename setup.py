@@ -7,5 +7,5 @@ setup(name='GenomicWindows',
       url='https://github.com/kaspermunch/GenomicIntervals',
       author='Kasper Munch',
       packages=['GenomicIntervals'],
-      zip_safe=True)
+      zip_safe=False)
 

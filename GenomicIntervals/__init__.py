@@ -253,13 +253,13 @@ def jaccard_stat(a, b, chromosome_sizes, permute=False):
 
 
 
-def interval_jaccard(query, annot, samples=1000, chromosome_sizes={}, dview=None):
+def interval_jaccard(query, annot, chromosome_sizes, samples=1000, dview=None):
     """
     Compute jaccard test statistic and p-value.
     """
 
     # compute actual jaccard stat for query and annot
-    test_stat = jaccard_stat(query, annot)
+    test_stat = jaccard_stat(query, annot, chromosome_sizes)
 
     # partial function for jaccard stat with permuted query intervals
     jaccard_stat_perm = partial(jaccard_stat, chromosome_sizes=chromosome_sizes, permute=True)

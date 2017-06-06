@@ -4,6 +4,7 @@ import numpy
 from functools import wraps, reduce, partial
 import bisect, math, random, sys
 from itertools import chain
+from statsmodels.distributions.empirical_distribution import ECDF
 
 # def with_chrom(strip=True, addback=True):
 #     """decorator for converting a function operating on (start, end) tuples 
@@ -162,7 +163,7 @@ def interval_collapse(a):
     return a_un
 
 
-def remap(query, annot):
+def remap(query, annot, relative=False):
     query_start, query_end = query
     annot_starts, annot_ends = zip(*annot)
 
@@ -170,7 +171,7 @@ def remap(query, annot):
     idx = bisect.bisect_right(annot_ends, query_start)
     interval_start = idx != 0 and annot_ends[idx-1] or None
     interval_end = idx != len(annot) and annot_starts[idx] or None
-    assert interval_start is not None or interval_end is not None
+    assert interval_start is not None or interval_end is not None, "maybe your query annd annot overlaps..."
     
     if interval_start is None:
         interval_mid = - float('inf')
@@ -187,6 +188,15 @@ def remap(query, annot):
     else:
         remapped = [(query_start - interval_start, interval_mid - interval_start),
                     (interval_end - query_end, interval_end - interval_mid)]
+
+    # compute remapped distance relative to the interval length (so that is is max 0.5)
+    if relative:
+        if interval_start is None or interval_end is None:
+            remapped = [(numpy.nan, numpy.nan)]
+        else:
+            interval_size = float(interval_end - interval_start)
+            remapped = [(s/interval_size, e/interval_size) for (s, e) in remapped]
+
     return remapped
 
 
@@ -203,45 +213,58 @@ def interval_distance(query, annot):
     return list(chain.from_iterable(remap(q, annot) for q in query))
 
 
+@by_chrom
+@with_chrom
+def interval_relative_distance(query, annot):
+    """
+    Convertes absolute coordinates of each query intervals so that start and end
+    to distances relative to the most proximal annotation.  
+    If an interval overlaps the midpoint between two annotations it is split 
+    into two intervals proximal to each annotation.
+    It is assumed that the query intervals do not overlap the 
+    """
+    return list(chain.from_iterable(remap(q, annot, relative=True) for q in query))
+
+
+def interval_permute(df, chromosome_sizes):
+    """
+    Permute intervals not preserving size of gaps.
+    """
+
+    group_list = list()
+    for chrom, group in df.groupby('chrom'):
+
+        assert group.end.max() <= chromosome_sizes[chrom]
+
+        segment_lengths = group.end - group.start
+        total_gap = numpy.sum(group.start - group.end.shift())
+        if numpy.isnan(total_gap): # in case there are no internal gaps (one segment)
+            total_gap = 0
+        else:
+            total_gap = int(total_gap)
+        if group.start.iloc[0] != 0:
+            total_gap += group.start.iloc[0]
+        if group.end.iloc[-1] != chromosome_sizes[chrom] + 1:
+            total_gap += chromosome_sizes[chrom] + 1 - group.end.iloc[-1]
+
+        assert total_gap >= len(segment_lengths)+1, (total_gap, len(segment_lengths)+1)
+        idx = pandas.Series(sorted(random.sample(range(total_gap), len(segment_lengths)+1)))
+        gap_lengths = (idx - idx.shift()).dropna()
+
+        borders = numpy.cumsum([j for i in zip(gap_lengths, segment_lengths) for j in i])
+        starts, ends = borders[::2], borders[1::2]
+
+        new_df = pandas.DataFrame({'chrom': chrom, 'start': starts, 'end': ends})
+        group_list.append(new_df)
+
+    return pandas.concat(group_list)
+
 
 def jaccard_stat(a, b, chromosome_sizes, permute=False):
     """
     Compute Jaccard overlap statistic, optionally 
     preceeded by permuting intervals in first argument.
     """
-
-    def interval_permute(df, chromosome_sizes):
-        """
-        Permute intervals not preserving size of gaps.
-        """
-
-        group_list = list()
-        for chrom, group in df.groupby('chrom'):
-
-            assert group.end.max() <= chromosome_sizes[chrom]
-
-            segment_lengths = group.end - group.start
-            total_gap = numpy.sum(group.start - group.end.shift())
-            if numpy.isnan(total_gap): # in case there are no internal gaps (one segment)
-                total_gap = 0
-            else:
-                total_gap = int(total_gap)
-            if group.start.iloc[0] != 0:
-                total_gap += group.start.iloc[0]
-            if group.end.iloc[-1] != chromosome_sizes[chrom] + 1:
-                total_gap += chromosome_sizes[chrom] + 1 - group.end.iloc[-1]
-
-            assert total_gap >= len(segment_lengths)+1, (total_gap, len(segment_lengths)+1)
-            idx = pandas.Series(sorted(random.sample(range(total_gap), len(segment_lengths)+1)))
-            gap_lengths = (idx - idx.shift()).dropna()
-
-            borders = numpy.cumsum([j for i in zip(gap_lengths, segment_lengths) for j in i])
-            starts, ends = borders[::2], borders[1::2]
-
-            new_df = pandas.DataFrame({'chrom': chrom, 'start': starts, 'end': ends})
-            group_list.append(new_df)
-
-        return pandas.concat(group_list)
 
     if permute:
         a = interval_permute(a, chromosome_sizes)
@@ -250,10 +273,9 @@ def jaccard_stat(a, b, chromosome_sizes, permute=False):
     union = interval_union(a, b)
 
     return sum(inter.end - inter.start) / float(sum(union.end - union.start))
+    
 
-
-
-def interval_jaccard(query, annot, chromosome_sizes, samples=1000, dview=None):
+def interval_jaccard(query, annot, chromosome_sizes, samples=1000):
     """
     Compute jaccard test statistic and p-value.
     """
@@ -265,11 +287,7 @@ def interval_jaccard(query, annot, chromosome_sizes, samples=1000, dview=None):
     jaccard_stat_perm = partial(jaccard_stat, chromosome_sizes=chromosome_sizes, permute=True)
 
     # sampling of jaccard stats with permuted query intervals
-    if dview is not None:
-        assert 0, "this does not work..., don't use dview..."
-        null_distr = list(dview.map_sync(jaccard_stat_perm, [query] * samples, [annot] * samples))
-    else:
-        null_distr = list(map(jaccard_stat_perm, [query] * samples, [annot] * samples))
+    null_distr = list(map(jaccard_stat_perm, [query] * samples, [annot] * samples))
 
     # get p value
     null_distr.sort()
@@ -277,6 +295,30 @@ def interval_jaccard(query, annot, chromosome_sizes, samples=1000, dview=None):
     if p_value == 0:
         sys.stderr.write('p-value is zero smaller than {}. Increase nr samples to get actual p-value.\n'.format(1/float(samples)))
 
+    return test_stat, p_value
+
+
+def distance_stat(query, annot, samples=10000, npoints=1000):
+
+    remapped_df = interval_relative_distance(query, annot)
+    distances = remapped_df.start
+
+    def _stat(distances, npoints):
+        obs_ecdf = ECDF(distances)
+        points = numpy.linspace(0, 0.5, num=npoints)    
+        test_stat = sum(obs_ecdf(points) - 2 * points) * 2 / float(npoints)
+        return test_stat
+    
+    test_stat = _stat(distances, npoints)
+    
+    null_distr = list()
+    for i in range(samples):
+        sampled_distances = numpy.random.uniform(0, 0.5, len(distances))
+        # we compute absolute values for the null distribution
+        null_distr.append(abs(_stat(sampled_distances, npoints)))
+    null_distr.sort()
+    # we compare abs value of test_stat to null distr to get pvalue for extremity in both directions
+    p_value = (len(null_distr) - bisect.bisect_left(null_distr, abs(test_stat))) / float(len(null_distr))
     return test_stat, p_value
 
 
@@ -337,10 +379,19 @@ if __name__ == "__main__":
     print(annot.head())
     print(query.head())
 
+
+    annot = pandas.DataFrame({'chrom': 'chr1', 'start': [500, 2000], 'end': [1000, 2500]})
+    query = pandas.DataFrame({'chrom': 'chr1', 'start': [1100, 1800], 'end': [1200, 1900]})
+    # query = pandas.DataFrame({'chrom': 'chr1', 'start': [1100], 'end': [1900]})
+    # query = pandas.DataFrame({'chrom': 'chr1', 'start': [100], 'end': [400]})
+
+    print(interval_relative_distance(query, annot))
+    print(distance_stat(query, annot))
+
+
     print(interval_jaccard(query, annot, samples=10, chromosome_sizes={'chr1': 1500000, 'chr2': 1500000}))
 
     # FIXME: it does not work if query has chromosoems not in annotation...
-
 
 
 

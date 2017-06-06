@@ -1,8 +1,8 @@
-import pandas as pd
-import numpy as np
+import pandas
+import numpy
 
-from functools import wraps, reduce
-import bisect, math, random
+from functools import wraps, reduce, partial
+import bisect, math, random, sys
 from itertools import chain
 
 # def with_chrom(strip=True, addback=True):
@@ -22,7 +22,7 @@ from itertools import chain
 #                 tps_list.append(tps)
 #             assert len(chrom_set) == 1
 #             chrom = chrom_set.pop()
-#             res_df = pd.DataFrame.from_records(func(*tps_list), columns = ['start', 'end'])
+#             res_df = pandas.DataFrame.from_records(func(*tps_list), columns = ['start', 'end'])
 #             if addback:
 #                 res_df['chrom'] = chrom
 #             return res_df
@@ -61,7 +61,7 @@ def by_chrom(func):
                 func_args.append(df.loc[idx[i][chrom]])
             results.append(func(*func_args))
 
-        return pd.concat(results).reset_index()
+        return pandas.concat(results).reset_index()
     return wrapper
 
 
@@ -78,7 +78,7 @@ def with_chrom(func):
             tps_list.append(tps)
         assert len(chrom_set) == 1
         chrom = chrom_set.pop()
-        res_df = pd.DataFrame.from_records(func(*tps_list), columns = ['start', 'end'])
+        res_df = pandas.DataFrame.from_records(func(*tps_list), columns = ['start', 'end'])
         res_df['chrom'] = chrom
         return res_df
     return wrapper
@@ -203,53 +203,80 @@ def interval_distance(query, annot):
     return list(chain.from_iterable(remap(q, annot) for q in query))
 
 
-def interval_permute(df, chromosome_sizes):
+
+def jaccard_stat(a, b, chromosome_sizes={}, permute=False):
     """
-    Permute intervals not preserving size of gaps.
+    Compute Jaccard overlap statistic, optionally 
+    preceeded by permuting intervals in first argument.
     """
-    group_list = list()
-    for chrom, group in df.groupby('chrom'):
 
-        assert group.end.max() <= chromosome_sizes[chrom]
+    def interval_permute(df, chromosome_sizes={}):
+        """
+        Permute intervals not preserving size of gaps.
+        """
 
-        segment_lengths = group.end - group.start
-        total_gap = int(np.sum(df.start.shift() - df.end))
-        if group.start.iloc[0] != 0:
-            total_gap += group.start.iloc[0]
-        if group.end.iloc[-1] != chromosome_sizes[chrom]:
-            total_gap += chromosome_sizes[chrom] - group.end.iloc[-1]
+        group_list = list()
+        for chrom, group in df.groupby('chrom'):
 
-        idx = pd.Series(sorted(random.sample(range(total_gap), len(segment_lengths)+1)))
-        gap_lengths = (idx - idx.shift()).dropna()
+            assert group.end.max() <= chromosome_sizes[chrom]
 
-        borders = np.cumsum([j for i in zip(gap_lengths, segment_lengths) for j in i])
-        starts, ends = borders[::2], borders[1::2]
+            segment_lengths = group.end - group.start
+            total_gap = numpy.sum(group.start - group.end.shift())
+            if numpy.isnan(total_gap): # in case there are no internal gaps (one segment)
+                total_gap = 0
+            else:
+                total_gap = int(total_gap)
+            if group.start.iloc[0] != 0:
+                total_gap += group.start.iloc[0]
+            if group.end.iloc[-1] != chromosome_sizes[chrom] + 1:
+                total_gap += chromosome_sizes[chrom] + 1 - group.end.iloc[-1]
 
-        new_df = pd.DataFrame({'chrom': chrom, 'start': starts, 'end': ends})
-        group_list.append(new_df)
+            assert total_gap >= len(segment_lengths)+1, (total_gap, len(segment_lengths)+1)
+            idx = pandas.Series(sorted(random.sample(range(total_gap), len(segment_lengths)+1)))
+            gap_lengths = (idx - idx.shift()).dropna()
 
-    return pd.concat(group_list)
+            borders = numpy.cumsum([j for i in zip(gap_lengths, segment_lengths) for j in i])
+            starts, ends = borders[::2], borders[1::2]
+
+            new_df = pandas.DataFrame({'chrom': chrom, 'start': starts, 'end': ends})
+            group_list.append(new_df)
+
+        return pandas.concat(group_list)
+
+    if permute:
+        a = interval_permute(a, chromosome_sizes=chromosome_sizes)
+
+    inter = interval_intersect(a, b)
+    union = interval_union(a, b)
+
+    return sum(inter.end - inter.start) / float(sum(union.end - union.start))
 
 
 
-def interval_jaccard(query, annot, samples=1000, chromosome_sizes={}):
+def interval_jaccard(query, annot, samples=1000, chromosome_sizes={}, dview=None):
     """
     Compute jaccard test statistic and p-value.
     """
-    def jaccard_stat(a, b):
-        inter = interval_intersect(a, b)
-        union = interval_union(a, b)
-        return sum(inter.end - inter.start) / sum(union.end - union.start)
 
+    # compute actual jaccard stat for query and annot
     test_stat = jaccard_stat(query, annot)
-    null_distr = list()
-    for i in range(samples):
-        permuted = interval_permute(query, chromosome_sizes)
-        null_distr.append(jaccard_stat(query, permuted))
+
+    # partial function for jaccard stat with permuted query intervals
+    jaccard_stat_perm = partial(jaccard_stat, chromosome_sizes=chromosome_sizes, permute=True)
+
+    # sampling of jaccard stats with permuted query intervals
+    if dview is not None:
+        assert 0, "this does not work..., don't use dview..."
+        null_distr = list(dview.map_sync(jaccard_stat_perm, [query] * samples, [annot] * samples))
+    else:
+        null_distr = list(map(jaccard_stat_perm, [query] * samples, [annot] * samples))
+
+    # get p value
     null_distr.sort()
-    p_value = (len(null_distr) - bisect.bisect_left(null_distr, test_stat)) / len(null_distr)
+    p_value = (len(null_distr) - bisect.bisect_left(null_distr, test_stat)) / float(len(null_distr))
     if p_value == 0:
-        raise ValueError#, 'p-value is zero smaller than {}'.format(1/samples)
+        sys.stderr.write('p-value is zero smaller than {}. Increase nr samples to get actual p-value.\n'.format(1/float(samples)))
+
     return test_stat, p_value
 
 
@@ -273,19 +300,19 @@ class _MultiGroupBy(object):
         for by in self.groupings[0].keys():
             subframes = [df.loc[gr[by]] for df, gr in zip(self.dflist.frames, self.groupings)]
             group_results.append(fun(*subframes))
-        return pd.concat(group_results)
+        return pandas.concat(group_results)
 
 
 
 if __name__ == "__main__":
     # annotation
     tp = [('chr1', 1, 3), ('chr1', 4, 10), ('chr1', 25, 30), ('chr1', 20, 27), ('chr2', 1, 10), ('chr2', 1, 3)]
-    annot = pd.DataFrame.from_records(tp, columns=['chrom', 'start', 'end'])
+    annot = pandas.DataFrame.from_records(tp, columns=['chrom', 'start', 'end'])
     print("annot\n", annot)
 
     # query
     tp = [('chr1', 8, 22), ('chr2', 14, 15)]
-    query = pd.DataFrame.from_records(tp, columns=['chrom', 'start', 'end'])
+    query = pandas.DataFrame.from_records(tp, columns=['chrom', 'start', 'end'])
     print("query\n", query)
 
     annot_collapsed = interval_collapse(annot)
@@ -300,14 +327,17 @@ if __name__ == "__main__":
     print('orig:')
     print(query)
 
-    print('permuted:')
-    print(interval_permute(query, {'chr1': 50, 'chr2': 50}))
+    # print('permuted:')
+    # print(interval_permute(query, {'chr1': 50, 'chr2': 50}))
 
     print('jaccard:')
-    annot = pd.DataFrame({'chrom': 'chr1', 'start': range(1, 1000000, 1000), 'end': range(50, 1000050, 1000)})
-    query = pd.DataFrame({'chrom': 'chr1', 'start': range(1, 10000, 1000), 'end': range(50, 10050, 1000)})
+    annot = pandas.DataFrame({'chrom': 'chr1', 'start': range(0, 1000000, 1000), 'end': range(100, 1000100, 1000)})
+    query = pandas.DataFrame({'chrom': 'chr1', 'start': range(50, 1000050, 1000), 'end': range(150, 1000150, 1000)})
 
-    print(interval_jaccard(query, annot, samples=1000, chromosome_sizes={'chr1': 1500000, 'chr2': 1500000}))
+    print(annot.head())
+    print(query.head())
+
+    print(interval_jaccard(query, annot, samples=10, chromosome_sizes={'chr1': 1500000, 'chr2': 1500000}))
 
     # FIXME: it does not work if query has chromosoems not in annotation...
 

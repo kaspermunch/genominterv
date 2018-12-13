@@ -260,6 +260,41 @@ def interval_permute(df, chromosome_sizes):
     return pandas.concat(group_list)
 
 
+def bootstrap(chromosome_sizes, samples=1000, return_boot=False):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(query, annot, **kwargs):
+
+            stat = func(query, annot, **kwargs)
+
+            boot = list()
+            for i in range(samples):
+                perm = interval_permute(query, chromosome_sizes)
+                boot.append(func(perm, annot, **kwargs))
+            boot.sort()
+            p_value = (len(boot) - bisect.bisect_left(boot, stat)) / float(len(boot))
+            if p_value == 0:
+                sys.stderr.write('p-value is zero smaller than {}. Increase nr samples to get actual p-value.\n'.format(1/float(samples)))
+
+            if return_boot:
+                return stat, p_value, boot
+            else:
+                return stat, p_value
+
+        return wrapper
+    return decorator
+
+
+def jaccard(a, b):
+    """
+    Compute Jaccard overlap statistic
+    """
+    inter = interval_intersect(a, b)
+    union = interval_union(a, b)
+
+    return sum(inter.end - inter.start) / float(sum(union.end - union.start))
+
+
 def jaccard_stat(a, b, chromosome_sizes, permute=False):
     """
     Compute Jaccard overlap statistic, optionally 
@@ -275,7 +310,9 @@ def jaccard_stat(a, b, chromosome_sizes, permute=False):
     return sum(inter.end - inter.start) / float(sum(union.end - union.start))
     
 
-def interval_jaccard(query, annot, chromosome_sizes, samples=1000):
+# turn interval_jaccard into a @bootstrap decorator
+
+def interval_jaccard(query, annot, chromosome_sizes, samples=1000, return_boot=False):
     """
     Compute jaccard test statistic and p-value.
     """
@@ -295,7 +332,10 @@ def interval_jaccard(query, annot, chromosome_sizes, samples=1000):
     if p_value == 0:
         sys.stderr.write('p-value is zero smaller than {}. Increase nr samples to get actual p-value.\n'.format(1/float(samples)))
 
-    return test_stat, p_value
+    if return_boot:
+        return test_stat, p_value, null_distr
+    else:
+        return test_stat, p_value
 
 
 def distance_stat(query, annot, samples=10000, npoints=1000):
@@ -388,12 +428,37 @@ if __name__ == "__main__":
     print(interval_relative_distance(query, annot))
     print(distance_stat(query, annot))
 
-
     print(interval_jaccard(query, annot, samples=10, chromosome_sizes={'chr1': 1500000, 'chr2': 1500000}))
 
-    # FIXME: it does not work if query has chromosoems not in annotation...
+
+    # ##################################################################
+
+    chromosome_sizes={'chr1': 1500000, 'chr2': 1500000}
+
+    def overlap_count(query, annot):
+          center = annot.start + (annot.end-annot.start)/2
+          b = numpy.equal(numpy.searchsorted(annot.start, center) - 1,
+                            numpy.searchsorted(annot.end, center, side='left')) & \
+                (query.chrom == annot.chrom)
+
+          return b.sum()
+
+    @bootstrap(chromosome_sizes, samples=1000)
+    def my_stat(a, b):
+        return jaccard(a, b)
+
+    print(my_stat(query, annot))
+
+    @bootstrap(chromosome_sizes, samples=1000)
+    def my_stat(a, b):
+        return overlap_count(a, b)
+
+    print(my_stat(query, annot))
 
 
+    # # FIXME: it does not work if query has chromosoems not in annotation...
+
+    ####################################################
 
 
     # annot_collapsed = (annot.groupby('chrom')

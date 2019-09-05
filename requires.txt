@@ -1,0 +1,5 @@
+
+python >= 3.0
+pandas >= 0.24
+numpy >= 1.13
+statsmodels >= 0.8

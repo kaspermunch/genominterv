@@ -531,10 +531,7 @@ def bootstrap(chromosome_sizes, samples=1000, smaller=False, return_boot=False):
     :raises: KeyError if ``chromosome_sizes`` string is not an assembly known to the module. In that case specify as dictionary.
     """
     if type(chromosome_sizes) is str:
-        try:
-            chromosome_sizes = chrom_sizes[chromosome_sizes]
-        except KeyError:
-            chromosome_sizes = chrom_sizes['chr' + chromosome_sizes]
+        chromosome_sizes = chrom_sizes[chromosome_sizes]
 
     def decorator(func):
         @wraps(func)

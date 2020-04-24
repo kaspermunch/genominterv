@@ -48,15 +48,15 @@ the module provides a :any:`genomic` decorator that can be applied to functions
 that operate lists of ``(start, end)`` tuples. Applying the decorator changes
 the signature of a function to make it operate on DataFrames that include
 ``chrom``, ``start``, and ``end`` columns. Here is an example function that
-computes a sum of intervals::
+shifts intervals by 1000bp:
 
     @genomic
-    def inverval_sum(tuples):
-        return sum(y-x for (x, y) in tuples)
+    def inverval_shift(tuples):
+        return [(x+1000, y+1000) for (x, y) in tuples]
 
     df = pandas.DataFrame()
 
-    genomic_sum = inverval_sum(df)
+    shifted = inverval_shift(df)
 
 Remapping functions
 ======================

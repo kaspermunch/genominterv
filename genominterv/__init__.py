@@ -373,24 +373,6 @@ def remap_interval_data(query, annot):
     :type annot: pandas.DataFrame
     :returns: A data frame with remapped intervals.
     :rtype: pandas.DataFrame
-
-    Example::
-
-    >>> query = pandas.DataFrame(dict(chrom='X', start=[3, 5], end=[15, 7], extra=['foo', 'bar'])
-    >>> query
-          chrom  start  end extra
-        0     X      3   15   foo
-        1     X      5    7   bar
-    >>> annot = pandas.DataFrame(dict(chrom='X', start=[1, 20], end=[2, 25]))
-    >>> annot
-          chrom  start  end
-        0     X      1    2
-        1     X     20   25
-    >>> interval_remap(query, annot)
-           start  end chrom  start_orig  end_orig extra
-        0      1    9     X           3        15   foo
-        1      5    9     X           3        15   foo
-        2      3    5     X           5         7   bar
     """
 
     annot_grouped = annot.groupby('chrom')
@@ -434,45 +416,45 @@ def remap_interval_data(query, annot):
 
 
 
-def ovl_interval_data(query, annot):
+# def ovl_interval_data(query, annot):
 
-    query_grouped = query.groupby('chrom')
-    annot_grouped = annot.groupby('chrom')
+#     query_grouped = query.groupby('chrom')
+#     annot_grouped = annot.groupby('chrom')
 
-    query_df_list = list()
-    annot_df_list = list()
+#     query_df_list = list()
+#     annot_df_list = list()
 
-    for chrom, query_group in query_grouped:
-        annot_group = annot_grouped.get_group(chrom)
+#     for chrom, query_group in query_grouped:
+#         annot_group = annot_grouped.get_group(chrom)
 
-        starts = query_group.start.tolist()
-        ends = query_group.end.tolist()
+#         starts = query_group.start.tolist()
+#         ends = query_group.end.tolist()
 
-        idx_list = list()    
-        annot_idx_list = list()
-        for tup in annot_group.itertuples():
+#         idx_list = list()    
+#         annot_idx_list = list()
+#         for tup in annot_group.itertuples():
 
-            start_idx = bisect.bisect_right(starts, tup.start) - 1
-            end_idx = bisect.bisect_right(starts, tup.end) - 1
+#             start_idx = bisect.bisect_right(starts, tup.start) - 1
+#             end_idx = bisect.bisect_right(starts, tup.end) - 1
 
-            if start_idx > -1 and tup.start < ends[start_idx]:
-                idx_list.append(start_idx)
-                annot_idx_list.append(tup.Index)
-            elif start_idx > -1 and tup.end < ends[start_idx]:
-                idx_list.append(end_idx)
-                annot_idx_list.append(tup.Index)
+#             if start_idx > -1 and tup.start < ends[start_idx]:
+#                 idx_list.append(start_idx)
+#                 annot_idx_list.append(tup.Index)
+#             elif start_idx > -1 and tup.end < ends[start_idx]:
+#                 idx_list.append(end_idx)
+#                 annot_idx_list.append(tup.Index)
 
-        query_df_list.append(query_group.iloc[idx_list])
-        annot_df_list.append(annot_group.loc[annot_idx_list, ['start', 'end']])
+#         query_df_list.append(query_group.iloc[idx_list])
+#         annot_df_list.append(annot_group.loc[annot_idx_list, ['start', 'end']])
 
-    query_data_overlap = (pandas.concat(query_df_list)
-                            .reset_index(drop=True)
-                         )
-    annot_intervals = (pandas.concat(annot_df_list)
-                        .reset_index(drop=True)
-                        .rename(columns={'start': 'ovl_start', 'end': 'ovl_end'})
-                        )
-    return pandas.concat([query_data_overlap, annot_intervals], axis=1)
+#     query_data_overlap = (pandas.concat(query_df_list)
+#                             .reset_index(drop=True)
+#                          )
+#     annot_intervals = (pandas.concat(annot_df_list)
+#                         .reset_index(drop=True)
+#                         .rename(columns={'start': 'ovl_start', 'end': 'ovl_end'})
+#                         )
+#     return pandas.concat([query_data_overlap, annot_intervals], axis=1)
 
 
 def interval_permute(df, chromosome_sizes):

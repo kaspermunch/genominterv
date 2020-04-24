@@ -48,7 +48,7 @@ the module provides a :any:`genomic` decorator that can be applied to functions
 that operate lists of ``(start, end)`` tuples. Applying the decorator changes
 the signature of a function to make it operate on DataFrames that include
 ``chrom``, ``start``, and ``end`` columns. Here is an example function that
-shifts intervals by 1000bp:
+shifts intervals by 1000bp::
 
     @genomic
     def inverval_shift(tuples):

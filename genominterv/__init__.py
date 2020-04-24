@@ -285,15 +285,15 @@ def remap(query, annot, relative=False, include_prox_coord=False):
     if interval_mid < query_start:
         if include_prox_coord:
             remapped = [(query_end - interval_end, query_start - interval_end,
-                        idx == 0 and numpy.nan or annot_starts[idx-1], 
-                        idx == 0 and numpy.nan or annot_ends[idx-1])]
+                        idx == 0 and numpy.nan or annot_starts[idx], 
+                        idx == 0 and numpy.nan or annot_ends[idx])]
         else:
             remapped = [(query_end - interval_end, query_start - interval_end)]
     elif interval_mid >= query_end:
         if include_prox_coord:
             remapped = [(query_start - interval_start, query_end - interval_start,
-                        idx == len(annot_starts) and numpy.nan or annot_starts[idx], 
-                        idx == len(annot_ends) and numpy.nan or annot_ends[idx])]
+                        idx == len(annot_starts) and numpy.nan or annot_starts[idx-1], 
+                        idx == len(annot_ends) and numpy.nan or annot_ends[idx-1])]
         else:
             remapped = [(query_start - interval_start, query_end - interval_start)]            
     else:
@@ -407,11 +407,11 @@ def remap_interval_data(query, annot):
             # start, end = (row['start'], row['end'])
         for row in group.itertuples(index=False):            
             start, end = row.start, row.end
-            for remapped_start, remapped_end, prox_start, prox_end in remap((start, end), annot_tups, include_prox_coord=True):
-                remapped.append((remapped_start, remapped_end, prox_start, prox_end) + tuple(row))
+            for remapped_start, remapped_end, start_prox, end_prox in remap((start, end), annot_tups, include_prox_coord=True):
+                remapped.append((remapped_start, remapped_end, start_prox, end_prox) + tuple(row))
 
         df = pandas.DataFrame().from_records(remapped, 
-                columns=('start_remap', 'end_remap', 'prox_start', 'prox_end') + column_names)
+                columns=('start_remap', 'end_remap', 'start_prox', 'end_prox') + column_names)
             # df = pandas.DataFrame().from_records(remapped, columns=['idx', 'start_remap', 'end_remap']).set_index('idx')
             # df = pandas.merge(group, df, right_index=True, left_index=True)
 
@@ -427,8 +427,8 @@ def remap_interval_data(query, annot):
 
     df['start_orig'] = df['start_orig'].astype('Int64')
     df['end_orig'] = df['end_orig'].astype('Int64')
-    df['prox_start'] = df['prox_start'].astype('Int64')
-    df['prox_end'] = df['prox_end'].astype('Int64')
+    df['start_prox'] = df['start_prox'].astype('Int64')
+    df['end_prox'] = df['end_prox'].astype('Int64')
 
     return df
 
@@ -615,12 +615,17 @@ def jaccard(a, b):
 if __name__ == "__main__":
 
 
+    print(remap((300, 400), [(0, 100), (1000, 1100)], include_prox_coord=True))
+
+    assert 0
 
     query = pandas.DataFrame(dict(chrom='X', start=[3, 5], end=[15, 7], extra=['foo', 'bar']))
     print(query)
     annot = pandas.DataFrame(dict(chrom='X', start=[1, 20], end=[2, 25]))
     print(annot)
     print(remap_interval_data(query, annot))
+
+    assert 0
 
     query = pandas.DataFrame(dict(chrom='X', start=[3, 5], end=[22, 7], extra=['foo', 'bar']))
     print(query)

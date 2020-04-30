@@ -1,11 +1,17 @@
 
-from setuptools import setup
+import setuptools
 
-setup(name='genominterv',
+setuptools.setup(name='genominterv',
       version='1.0',
-      description='Utilities for working with intervals in separate chromosomes.',
-      url='https://github.com/kaspermunch/genominterv',
       author='Kasper Munch',
-      packages=['genominterv'],
-      zip_safe=False)
-
+      description='Utilities for working with intervals in separate chromosomes.',
+      # long_description=long_description,
+      long_description_content_type="text/markdown",
+      url='https://github.com/kaspermunch/genominterv',
+      packages=setuptools.find_packages(),
+      python_requires='>=3.6',
+      install_requires=[
+      'pandas>=1.0',
+      'numpy>=1.1',
+      'statsmodels>=0.8',
+      ])

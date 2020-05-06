@@ -2,7 +2,7 @@
 import setuptools
 
 setuptools.setup(name='genominterv',
-      version='1.0',
+      version='1.0.1',
       author='Kasper Munch',
       description='Utilities for working with intervals in separate chromosomes.',
       # long_description=long_description,

@@ -169,7 +169,39 @@ def intersect(a, b):
     if not (a and b):
         return []
     return merge(a, b, lambda in_a, in_b: in_a and in_b)
+
+def collapse(a):
+    a_union = [list(a[0])]
+    for i in range(1, len(a)):
+        x = a[i]
+        if a_union[-1][1] < x[0]:
+            a_union.append(list(x))
+        else:
+            a_union[-1][1] = x[1]
+    return a_union
+
+def invert(a, left, right):
+    starts, ends = zip(*collapse(sorted(a)))
     
+    assert left <= starts[0] and right >= ends[-1]    
+
+    starts = list(starts)
+    ends = list(ends)
+        
+    ends.insert(0, left)
+    starts.append(right)
+
+    # remove first and last interval if they are empty
+    if starts[0] == ends[0]:
+        del starts[0]
+        del ends[0]
+    if starts[-1] == ends[-1]: 
+        del starts[-1]
+        del ends[-1]            
+    inverted = zip(ends, starts)
+    inverted = list(map(tuple, inverted))
+    return inverted
+
 @genomic
 def interval_diff(query, annot):
     """
@@ -229,14 +261,7 @@ def interval_collapse(interv):
     :returns: A data frame with chr, start, end columns representing the union.
     :rtype: pandas.DataFrame
     """
-    interv_union = [list(interv[0])]
-    for i in range(1, len(interv)):
-        x = interv[i]
-        if interv_union[-1][1] < x[0]:
-            interv_union.append(list(x))
-        else:
-            interv_union[-1][1] = x[1]
-    return interv_union
+    return collapse(interv)
 
 
 def remap(query, annot, relative=False, include_prox_coord=False):

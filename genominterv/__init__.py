@@ -567,19 +567,17 @@ def bootstrap(chromosome_sizes, samples=1000, smaller=False, return_boot=False):
     return decorator
 
 
-def proximity_test(query, annot, samples=10000, npoints=1000):
+def proximity_test(query, annot, samples=10000, npoints=1000, two_sided=False):
     """This function does something.
-
     :param name: The name to use.
     :type name: str.
     :param state: Current state to be in.
     :type state: bool.
     :returns:  int -- the return code.
     :raises: AttributeError, KeyError
-
     """
     remapped_df = interval_relative_distance(query, annot)
-    distances = remapped_df.start
+    distances = abs(remapped_df.start)
 
     def _stat(distances, npoints):
         obs_ecdf = ECDF(distances)
@@ -593,11 +591,14 @@ def proximity_test(query, annot, samples=10000, npoints=1000):
     for i in range(samples):
         sampled_distances = numpy.random.uniform(0, 0.5, len(distances))
         # we compute absolute values for the null distribution
-        null_distr.append(abs(_stat(sampled_distances, npoints)))
+        null_distr.append(_stat(sampled_distances, npoints))
     null_distr.sort()
-    # we compare abs value of test_stat to null distr to get pvalue for extremity in both directions
-    p_value = (len(null_distr) - bisect.bisect_left(null_distr, abs(test_stat))) / len(null_distr)
-
+    
+    if two_sided:
+        p_value = (len(null_distr) - bisect.bisect_left(list(map(abs, null_distr)), abs(test_stat))) / len(null_distr)
+    else:
+        p_value = (len(null_distr) - bisect.bisect_left(null_distr, test_stat)) / len(null_distr)
+    
     TestResult = namedtuple('TestResult', ['statistic', 'pvalue'])
     return TestResult(test_stat, p_value)
 

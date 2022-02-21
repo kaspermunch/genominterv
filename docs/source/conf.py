@@ -22,7 +22,7 @@ copyright = '2019, Kasper Munch'
 author = 'Kasper Munch'
 
 # The full version, including alpha/beta/rc tags
-release = '0.1'
+release = '1.1'
 
 master_doc = 'index'
 
